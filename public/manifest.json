@@ -1,26 +1,13 @@
 {
-  "short_name": "수능타이머",
-  "name": "수능 마스터 타이머 - 실전 모의고사",
+  "short_name": "뽀짝타이머",
+  "name": "귀염뽀짝 타이머",
   "icons": [
-    {
-      "src": "favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon"
-    },
-    {
-      "src": "logo192.png",
-      "type": "image/png",
-      "sizes": "192x192"
-    },
-    {
-      "src": "logo512.png",
-      "type": "image/png",
-      "sizes": "512x512"
-    }
+    {"src": "favicon.ico", "sizes": "64x64 32x32 16x16", "type": "image/x-icon"},
+    {"src": "logo192.png", "type": "image/png", "sizes": "192x192", "purpose": "any maskable"},
+    {"src": "logo512.png", "type": "image/png", "sizes": "512x512", "purpose": "any maskable"}
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#667eea",
-  "background_color": "#ffffff",
-  "description": "수능 실전 타이머 앱 - 과목별 타이머, 모의고사 모드, 공부 통계"
+  "theme_color": "#7B6B8D",
+  "background_color": "#FFF0F5"
 }
