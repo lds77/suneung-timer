@@ -1,15 +1,15 @@
 {
   "files": {
     "main.css": "/suneung-timer/static/css/main.ba1198ba.css",
-    "main.js": "/suneung-timer/static/js/main.5d847946.js",
+    "main.js": "/suneung-timer/static/js/main.60eb5ece.js",
     "static/js/453.e59922cb.chunk.js": "/suneung-timer/static/js/453.e59922cb.chunk.js",
     "index.html": "/suneung-timer/index.html",
     "main.ba1198ba.css.map": "/suneung-timer/static/css/main.ba1198ba.css.map",
-    "main.5d847946.js.map": "/suneung-timer/static/js/main.5d847946.js.map",
+    "main.60eb5ece.js.map": "/suneung-timer/static/js/main.60eb5ece.js.map",
     "453.e59922cb.chunk.js.map": "/suneung-timer/static/js/453.e59922cb.chunk.js.map"
   },
   "entrypoints": [
     "static/css/main.ba1198ba.css",
-    "static/js/main.5d847946.js"
+    "static/js/main.60eb5ece.js"
   ]
 }
