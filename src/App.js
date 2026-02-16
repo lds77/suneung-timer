@@ -802,6 +802,9 @@ function App() {
   const [examRecords, setExamRecords] = useState(() => { try { const s = localStorage.getItem('examRecords'); return s ? JSON.parse(s) : []; } catch { return []; } });
 
   const [showCompletion, setShowCompletion] = useState(false);
+  const [showAlarmOverlay, setShowAlarmOverlay] = useState(false); // 알림 종료 버튼 오버레이
+  const [alarmSource, setAlarmSource] = useState(''); // 'main' | 'sub'
+  const alarmIntervalRef = useRef(null);
   const [currentTip, setCurrentTip] = useState('');
   const [pauseTip, setPauseTip] = useState('');
   const [pauseCount, setPauseCount] = useState(0);
@@ -928,9 +931,75 @@ function App() {
         o.start(ctx.currentTime + offset); o.stop(ctx.currentTime + offset + 0.5);
       });
     } catch (e) {}
-    // 소리 성공 여부와 관계없이 항상 진동
     if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
   }, [getAudioContext]);
+
+  // --- 🔔 반복 알림음 재생 (사용자가 끌 때까지) ---
+  const playAlarmLoop = useCallback(() => {
+    try {
+      const ctx = getAudioContext();
+      const t = ctx.currentTime;
+      // 강한 알림 패턴: 삐-삐-삐 + 하강음
+      [0, 0.35, 0.7].forEach(offset => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = 880; o.type = 'square';
+        g.gain.setValueAtTime(0.35, t + offset);
+        g.gain.linearRampToValueAtTime(0, t + offset + 0.25);
+        o.start(t + offset); o.stop(t + offset + 0.25);
+      });
+      // 마무리 하강음
+      const o2 = ctx.createOscillator(), g2 = ctx.createGain();
+      o2.connect(g2); g2.connect(ctx.destination); o2.type = 'sawtooth';
+      o2.frequency.setValueAtTime(880, t + 1.1);
+      o2.frequency.linearRampToValueAtTime(440, t + 1.6);
+      g2.gain.setValueAtTime(0.25, t + 1.1);
+      g2.gain.linearRampToValueAtTime(0, t + 1.7);
+      o2.start(t + 1.1); o2.stop(t + 1.7);
+    } catch {}
+    if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
+  }, [getAudioContext]);
+
+  const startAlarmRepeat = useCallback((source) => {
+    setShowAlarmOverlay(true);
+    setAlarmSource(source);
+    playAlarmLoop(); // 즉시 한 번
+    if (alarmIntervalRef.current) clearInterval(alarmIntervalRef.current);
+    alarmIntervalRef.current = setInterval(() => { playAlarmLoop(); }, 2500);
+  }, [playAlarmLoop]);
+
+  const stopAlarmRepeat = useCallback(() => {
+    setShowAlarmOverlay(false);
+    setAlarmSource('');
+    if (alarmIntervalRef.current) { clearInterval(alarmIntervalRef.current); alarmIntervalRef.current = null; }
+    if (navigator.vibrate) navigator.vibrate(0); // 진동 즉시 중단
+  }, []);
+
+  // 알림 끄기 버튼 핸들러 (메인 타이머 후속 로직)
+  const handleDismissAlarm = useCallback(() => {
+    stopAlarmRepeat();
+    setShowCompletion(false);
+    // 메인 타이머 후속 처리
+    if (mockExamModeRef.current && !isBreakTimeRef.current) {
+      const schedule = MOCK_EXAM_SCHEDULE;
+      const next = mockExamStepRef.current + 1;
+      if (next < 6) {
+        setMockExamStep(next); const ns = schedule[next];
+        setCurrentTip((studyTips[ns.name] || ["화이팅!"])[0]);
+        setSelectedSubject(ns); setTimeLeft(ns.time * 60); setCountdown(3); setShowReady(true); setPauseCount(0);
+      } else {
+        setMockExamMode(false); setMockExamStep(0);
+        const schedule = MOCK_EXAM_SCHEDULE;
+        const examData = { id: Date.now(), date: new Date().toISOString(), condition: examCondition,
+          subjects: schedule.map(s => ({ name: s.name, emoji: s.emoji, score: '', wrongCount: '', totalQuestions: s.name === '한국사' || s.name.includes('탐구') ? 20 : s.name === '수학' ? 30 : 45 })),
+          totalScore: '', percentile: '', memo: '' };
+        setPendingExamData(examData); setShowExamResultInput(true);
+      }
+    } else if (!isBreakTimeRef.current && selectedSubjectRef.current && !selectedSubjectRef.current.name.startsWith('집중') && !selectedSubjectRef.current.name.startsWith('타임어택') && selectedSubjectRef.current.name !== '휴식') {
+      setLastSubjectName(selectedSubjectRef.current.name);
+      setShowWrongPrompt(true);
+    }
+  }, [stopAlarmRepeat]);
 
   // --- 🔔 시험 시작 타종 (땡~땡~땡) ---
   const playStartBell = useCallback(() => {
@@ -1252,36 +1321,38 @@ function App() {
   const handleTimerComplete = useCallback(() => {
     setIsRunning(false); endTimeRef.current = null; stopAmbientSound();
     const subjectName = selectedSubjectRef.current?.name;
-    if (subjectName && !subjectName.startsWith('집중') && !subjectName.startsWith('타임어택') && subjectName !== '휴식') {
-      // 과목 타이머
-      if (examSoundEnabledRef.current) playExamEndSequence(subjectName);
-      else if (soundEnabledRef.current) playSound();
-    } else if (subjectName && subjectName.startsWith('타임어택')) {
-      playTimeAttackBuzzer();
-    } else {
-      // 집중/휴식
-      if (soundEnabledRef.current) playSound();
-    }
-    // 모든 타이머 종료 시 항상 진동 (소리 ON/OFF 무관)
-    if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
-    recordStudyTimeFromRef();
-    saveTimelineEntry(selectedSubjectRef.current?.name);
+
+    // 모의고사 break:0 (한국사→탐구 연속)인 경우 알림 없이 바로 넘김
     const schedule = MOCK_EXAM_SCHEDULE;
     if (mockExamModeRef.current && mockExamStepRef.current < 5) {
       const cur = schedule[mockExamStepRef.current];
-      if (cur.break > 0) {
-        setIsBreakTime(true); setBreakMinutes(cur.break);
-        const nextSub = schedule[mockExamStepRef.current + 1];
-        const breakLabel = cur.name === '수학' ? '점심시간' : '쉬는 시간';
-        setCurrentTip(`${cur.break}분 ${breakLabel}. 다음은 ${nextSub.emoji} ${nextSub.name}!`);
-      } else {
-        // break:0 → 4교시 연속 (한국사→탐구1→탐구2), 바로 다음 과목
+      if (cur.break === 0) {
+        recordStudyTimeFromRef();
+        saveTimelineEntry(selectedSubjectRef.current?.name);
         const nextStep = mockExamStepRef.current + 1;
         mockExamStepRef.current = nextStep;
         setMockExamStep(nextStep);
         startTimerInternalRef.current?.(schedule[nextStep]);
-        return; // 집중도 표시 스킵
+        return;
       }
+    }
+
+    // 시험 환경음 모드 → 종료 안내방송은 1회만 (반복 알림 전에)
+    if (subjectName && !subjectName.startsWith('집중') && !subjectName.startsWith('타임어택') && subjectName !== '휴식') {
+      if (examSoundEnabledRef.current) playExamEndSequence(subjectName);
+    }
+
+    // 반복 알림 시작 (사용자가 끌 때까지)
+    startAlarmRepeat('main');
+
+    recordStudyTimeFromRef();
+    saveTimelineEntry(selectedSubjectRef.current?.name);
+    if (mockExamModeRef.current && mockExamStepRef.current < 5) {
+      const cur = schedule[mockExamStepRef.current];
+      setIsBreakTime(true); setBreakMinutes(cur.break);
+      const nextSub = schedule[mockExamStepRef.current + 1];
+      const breakLabel = cur.name === '수학' ? '점심시간' : '쉬는 시간';
+      setCurrentTip(`${cur.break}분 ${breakLabel}. 다음은 ${nextSub.emoji} ${nextSub.name}!`);
     } else if (!mockExamModeRef.current && !isBreakTimeRef.current) setShowBreakPrompt(true);
     if (!mockExamModeRef.current || isBreakTimeRef.current) {
       const pc = pauseCountRef.current; let fm;
@@ -1304,29 +1375,8 @@ function App() {
         setNotes(prev => ({ ...prev, [subName]: (prev[subName] || '') + `\n[${ts}] ${qmVal.trim()}` }));
       }
     }
-    setTimeout(() => {
-      setShowCompletion(false);
-      if (mockExamModeRef.current && !isBreakTimeRef.current) {
-        const next = mockExamStepRef.current + 1;
-        if (next < 6) {
-          setMockExamStep(next); const ns = schedule[next];
-          setCurrentTip((studyTips[ns.name] || ["화이팅!"])[0]);
-          setSelectedSubject(ns); setTimeLeft(ns.time * 60); setCountdown(3); setShowReady(true); setPauseCount(0);
-        } else {
-          setMockExamMode(false); setMockExamStep(0);
-          const examData = { id: Date.now(), date: new Date().toISOString(), condition: examCondition,
-            subjects: schedule.map(s => ({ name: s.name, emoji: s.emoji, score: '', wrongCount: '', totalQuestions: s.name === '한국사' || s.name.includes('탐구') ? 20 : s.name === '수학' ? 30 : 45 })),
-            totalScore: '', percentile: '', memo: '' };
-          setPendingExamData(examData); setShowExamResultInput(true);
-        }
-      } else if (!isBreakTimeRef.current && selectedSubjectRef.current && !selectedSubjectRef.current.name.startsWith('집중') && !selectedSubjectRef.current.name.startsWith('타임어택') && selectedSubjectRef.current.name !== '휴식') {
-        // 오답 등록 유도
-        setLastSubjectName(selectedSubjectRef.current.name);
-        setShowWrongPrompt(true);
-      }
-    }, 3000);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playSound, playExamEndSequence, playTimeAttackBuzzer, stopAmbientSound, recordStudyTimeFromRef, saveTimelineEntry, releaseWakeLock, exitFullscreen]);
+  }, [playExamEndSequence, startAlarmRepeat, stopAmbientSound, recordStudyTimeFromRef, saveTimelineEntry, releaseWakeLock, exitFullscreen]);
 
   // ══════════════════════════════════════════════
   // Web Worker & Effects
@@ -1346,20 +1396,13 @@ function App() {
         })));
       }
       else if (type === 'sub_complete') {
-        // 보조 타이머 완료 — 소리 + 진동
-        try {
-          const a = audioCtxRef.current || new (window.AudioContext || window.webkitAudioContext)();
-          if (a.state === 'suspended') a.resume();
-          const o = a.createOscillator(); const g = a.createGain();
-          o.connect(g); g.connect(a.destination);
-          o.frequency.value = 880; g.gain.value = 0.3;
-          o.start(); o.stop(a.currentTime + 0.3);
-        } catch {}
-        if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
+        // 보조 타이머 완료 — 반복 알림 시작
+        startAlarmRepeat('sub');
       }
     };
     return () => {
       if (workerRef.current) workerRef.current.terminate();
+      if (alarmIntervalRef.current) clearInterval(alarmIntervalRef.current);
       stopAmbientSound();
       if (audioCtxRef.current) { try { audioCtxRef.current.close(); } catch {} }
       if ('speechSynthesis' in window) window.speechSynthesis.cancel();
@@ -1421,28 +1464,34 @@ function App() {
     const label = mode === 'stopwatch' ? '스톱워치' : '카운트다운';
     const setMinutes = 25;
     const remaining = setMinutes * 60;
-    // UI 즉시 반영
-    if (mode === 'stopwatch') {
-      setSubTimers(prev => [...prev, { id, mode, label, running: true, paused: false, elapsed: 0, startedAt: Date.now(), remaining: 0, endTime: null }]);
-    } else {
-      setSubTimers(prev => [...prev, { id, mode: 'countdown', label, running: false, paused: false, remaining, setMinutes, endTime: null, elapsed: 0, startedAt: null }]);
+    // Worker에 등록 (Worker가 sub_tick으로 UI 업데이트)
+    if (workerRef.current) {
+      workerRef.current.postMessage({ command: 'sub_add', subData: { id, mode, label, remaining, setMinutes } });
+      // 즉시 sync 요청하여 UI 반영
+      workerRef.current.postMessage({ command: 'sync' });
     }
-    // Worker에 등록
-    if (workerRef.current) workerRef.current.postMessage({ command: 'sub_add', subData: { id, mode, label, remaining, setMinutes } });
   };
   const toggleSubTimer = (id) => {
-    if (workerRef.current) workerRef.current.postMessage({ command: 'sub_toggle', subId: id });
+    if (workerRef.current) {
+      workerRef.current.postMessage({ command: 'sub_toggle', subId: id });
+      workerRef.current.postMessage({ command: 'sync' });
+    }
   };
   const removeSubTimer = (id) => {
     setSubTimers(prev => prev.filter(t => t.id !== id));
     if (workerRef.current) workerRef.current.postMessage({ command: 'sub_remove', subId: id });
   };
   const resetSubTimer = (id) => {
-    if (workerRef.current) workerRef.current.postMessage({ command: 'sub_reset', subId: id });
+    if (workerRef.current) {
+      workerRef.current.postMessage({ command: 'sub_reset', subId: id });
+      workerRef.current.postMessage({ command: 'sync' });
+    }
   };
   const updateSubTimerMinutes = (id, mins) => {
-    setSubTimers(prev => prev.map(t => t.id === id && !t.running ? { ...t, setMinutes: mins, remaining: mins * 60, endTime: null } : t));
-    if (workerRef.current) workerRef.current.postMessage({ command: 'sub_update_minutes', subId: id, subData: { minutes: mins } });
+    if (workerRef.current) {
+      workerRef.current.postMessage({ command: 'sub_update_minutes', subId: id, subData: { minutes: mins } });
+      workerRef.current.postMessage({ command: 'sync' });
+    }
   };
   const updateSubTimerLabel = (id, label) => {
     setSubTimers(prev => prev.map(t => t.id === id ? { ...t, label } : t));
@@ -2232,7 +2281,13 @@ function App() {
           </div>
         )}
         {isPaused && <div className="paused-overlay"><img src={TOTORU} alt="토토루" className="pause-mascot" /><div className="pause-main">일시정지됨</div>{!focusMode && <div className="pause-tip">{pauseTip}</div>}</div>}
-        {showCompletion && <div className="completion-overlay"><img src={readyMascot} alt="" className="completion-mascot" /><div className="completion-message">{currentTip}</div></div>}
+        {showCompletion && (
+          <div className="completion-overlay">
+            <img src={readyMascot} alt="" className="completion-mascot" />
+            <div className="completion-message">{currentTip}</div>
+            {showAlarmOverlay && <button className="alarm-dismiss-btn" onClick={handleDismissAlarm}>🔕 알림 끄기</button>}
+          </div>
+        )}
       </div></div>
   );
 
@@ -2366,7 +2421,22 @@ function App() {
         ))}
       </div>
 
-      {showCompletion && <div className="completion-overlay"><img src={readyMascot} alt="" className="completion-mascot" /><div className="completion-message">{currentTip}</div></div>}
+      {showCompletion && (
+        <div className="completion-overlay">
+          <img src={readyMascot} alt="" className="completion-mascot" />
+          <div className="completion-message">{currentTip}</div>
+          {showAlarmOverlay && <button className="alarm-dismiss-btn" onClick={handleDismissAlarm}>🔕 알림 끄기</button>}
+        </div>
+      )}
+
+      {/* 보조 타이머 알림 오버레이 (메인 완료가 아닌 경우) */}
+      {showAlarmOverlay && alarmSource === 'sub' && !showCompletion && (
+        <div className="completion-overlay sub-alarm-overlay">
+          <div className="sub-alarm-icon">⏰</div>
+          <div className="completion-message">보조 타이머 완료!</div>
+          <button className="alarm-dismiss-btn" onClick={stopAlarmRepeat}>🔕 알림 끄기</button>
+        </div>
+      )}
 
       {/* 미니 타이머 바 (축소 상태) */}
       {isRunning && !timerExpanded && selectedSubject && (
