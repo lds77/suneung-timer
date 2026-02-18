@@ -1481,3 +1481,39 @@ input:checked + .slider:before { transform: translateX(28px); background-color: 
 }
 .dark-mode .code-input { background: #2d2d3a; border-color: var(--th); color: var(--th); }
 .dark-mode .code-input:focus { border-color: white; }
+<<<<<<< Updated upstream
+=======
+
+/* ════════════════════════════════════════
+   알림 끄기 버튼 / 반복 알림 오버레이
+   ════════════════════════════════════════ */
+.alarm-dismiss-btn {
+  display: block; margin: 24px auto 0; padding: 16px 48px;
+  border: 3px solid white; border-radius: 50px;
+  background: rgba(255,71,87,0.9); color: white;
+  font-size: 1.2em; font-weight: 800; font-family: inherit;
+  cursor: pointer; transition: all 0.2s;
+  animation: alarmBtnPulse 1.5s ease-in-out infinite;
+  box-shadow: 0 4px 20px rgba(255,71,87,0.4);
+}
+.alarm-dismiss-btn:hover { background: rgba(255,71,87,1); transform: scale(1.05); }
+.alarm-dismiss-btn:active { transform: scale(0.95); }
+@keyframes alarmBtnPulse {
+  0%, 100% { box-shadow: 0 4px 20px rgba(255,71,87,0.4); }
+  50% { box-shadow: 0 4px 30px rgba(255,71,87,0.7); }
+}
+
+/* 보조 타이머 알림 오버레이 */
+.sub-alarm-overlay {
+  z-index: 1100;
+}
+.sub-alarm-icon {
+  font-size: 3em; margin-bottom: 12px;
+  animation: alarmShake 0.5s ease-in-out infinite;
+}
+@keyframes alarmShake {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-15deg); }
+  75% { transform: rotate(15deg); }
+}
+>>>>>>> Stashed changes

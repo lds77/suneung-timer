@@ -22,6 +22,14 @@
   ],
   "start_url": ".",
   "display": "standalone",
+<<<<<<< Updated upstream
   "theme_color": "#7B6B8D",
   "background_color": "#FFF0F5"
 }
+=======
+  "orientation": "portrait",
+  "theme_color": "#667eea",
+  "background_color": "#1a1a2e",
+  "description": "수능 실전 타이머 앱 - 과목별 타이머, 모의고사 모드, 공부 통계"
+}
+>>>>>>> Stashed changes
