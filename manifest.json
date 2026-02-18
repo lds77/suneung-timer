@@ -8,21 +8,24 @@
       "type": "image/x-icon"
     },
     {
-  "src": "logo192.png",
-  "type": "image/png",
-  "sizes": "192x192",
-  "purpose": "any"
-},
-{
-  "src": "logo512.png",
-  "type": "image/png",
-  "sizes": "512x512",
-  "purpose": "any"
-}
+      "src": "logo192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
   ],
   "start_url": ".",
   "display": "standalone",
+  "orientation": "portrait",
   "theme_color": "#667eea",
-  "background_color": "#ffffff",
-  "description": "수능 실전 타이머 앱 - 과목별 타이머, 모의고사 모드, 공부 통계"
+  "background_color": "#1a1a2e",
+  "description": "수능 실전 타이머 앱 - 과목별 타이머, 모의고사 모드, 공부 통계",
+  "categories": ["education", "productivity"],
+  "permissions": ["notifications"]
 }
