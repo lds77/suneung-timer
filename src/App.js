@@ -960,13 +960,30 @@ function App() {
     if (navigator.vibrate) navigator.vibrate([300, 100, 300, 100, 300]);
   }, [getAudioContext]);
 
-  const startAlarmRepeat = useCallback((source) => {
+    const startAlarmRepeat = useCallback((source, timerLabel) => {
+    // 1. 화면에 알람 창 띄우기 (기존 로직)
     setShowAlarmOverlay(true);
     setAlarmSource(source);
-    playAlarmLoop(); // 즉시 한 번
+
+    // 2. 서비스 워커에 알림 보내기 (★백그라운드 진동의 핵심★)
+    const label = timerLabel || (source === 'main' ? '메인 타이머' : '보조 타이머');
+    const tag = `timer-${source}-${Date.now()}`;
+    
+    if (typeof sendNotificationViaSW === 'function') {
+      sendNotificationViaSW(`⏰ ${label} 완료!`, `${label} 시간이 종료되었습니다.`, tag);
+    }
+
+    // 3. 인앱 알람 반복 실행 (소리 및 포그라운드 진동)
     if (alarmIntervalRef.current) clearInterval(alarmIntervalRef.current);
-    alarmIntervalRef.current = setInterval(() => { playAlarmLoop(); }, 2500);
-  }, [playAlarmLoop]);
+    
+    // 즉시 한 번 실행하고 2.5초마다 반복
+    playAlarmLoop(source, label); 
+    alarmIntervalRef.current = setInterval(() => { 
+      playAlarmLoop(source, label); 
+    }, 2500);
+    
+  }, [playAlarmLoop, sendNotificationViaSW]); // 의존성 배열에 SW 함수 추가 확인!
+
 
   const stopAlarmRepeat = useCallback(() => {
     setShowAlarmOverlay(false);
